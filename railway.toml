@@ -2,9 +2,8 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "gunicorn app:app"
+startCommand = "python app.py"
 
 [env]
 DEEPSEEK_API_KEY = ""
 OKX_API_KEY = ""
-DATABASE_URL = ""
