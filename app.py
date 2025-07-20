@@ -1088,8 +1088,13 @@ def status():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("🚀 BTC专业分析平台启动...")
-    print(f"🔑 OKX API: {'✅' if OKX_API_KEY else '❌'}")
+    print(f"🔑 OKX API: {'✅' if OKX_API_KEY else '❌'}")  
     print(f"🔑 DeepSeek API: {'✅' if DEEPSEEK_API_KEY else '❌'}")
     print("🎯 授权码: BTC2025")
     
     app.run(host='0.0.0.0', port=port, debug=False)
+
+# For Railway deployment
+def create_app():
+    return app
+
