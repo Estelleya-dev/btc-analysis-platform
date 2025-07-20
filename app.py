@@ -2,7 +2,6 @@ from flask import Flask, jsonify, render_template_string, request
 import os
 import requests
 import time
-import json
 from datetime import datetime
 
 app = Flask(__name__)
@@ -13,459 +12,352 @@ OKX_API_KEY = os.getenv("OKX_API_KEY", "")
 
 # 全局缓存
 price_cache = {}
-analysis_cache = []
-news_cache = []
 
-# HTML模板
+# 简洁HTML模板
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTC专业分析平台</title>
+    <title>BTC分析平台 - 核心功能版</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%); color: #fff; min-height: 100vh; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; padding: 30px 0; border-bottom: 2px solid #333; background: rgba(247, 147, 26, 0.1); border-radius: 12px; margin-bottom: 30px; }
-        .header h1 { color: #f7931a; font-size: 2.8em; margin-bottom: 10px; text-shadow: 0 0 20px rgba(247, 147, 26, 0.3); }
-        .header p { color: #ccc; font-size: 1.2em; }
-        
-        .status-bar { display: flex; justify-content: space-between; align-items: center; padding: 15px 25px; background: linear-gradient(90deg, #2a2a2a 0%, #3a3a3a 100%); border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .status-item { display: flex; align-items: center; gap: 10px; }
-        .status-online { color: #4caf50; }
-        .status-offline { color: #f44336; }
-        
-        .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 25px; }
-        .card { background: linear-gradient(145deg, #1e1e1e 0%, #2a2a2a 100%); border-radius: 15px; padding: 30px; border: 1px solid #333; box-shadow: 0 8px 25px rgba(0,0,0,0.4); transition: transform 0.3s ease; }
-        .card:hover { transform: translateY(-5px); box-shadow: 0 12px 35px rgba(247, 147, 26, 0.2); }
-        .card h3 { color: #f7931a; margin-bottom: 20px; font-size: 1.4em; }
-        
-        .price-display { font-size: 3em; font-weight: bold; color: #4caf50; margin: 15px 0; text-shadow: 0 0 10px rgba(76, 175, 80, 0.3); }
-        .price-change { font-size: 1.3em; margin: 8px 0; }
-        .positive { color: #4caf50; }
-        .negative { color: #f44336; }
-        
-        .btn { background: linear-gradient(45deg, #f7931a 0%, #e8820a 100%); color: #000; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; margin: 8px 5px; transition: all 0.3s ease; }
-        .btn:hover { background: linear-gradient(45deg, #e8820a 0%, #d4730a 100%); transform: translateY(-2px); }
-        
-        .analysis-box { background: linear-gradient(135deg, #2a2a2a 0%, #3a3a3a 100%); padding: 25px; border-radius: 10px; margin-top: 20px; border-left: 4px solid #f7931a; }
-        .news-item { background: linear-gradient(135deg, #2a2a2a 0%, #3a3a3a 100%); padding: 20px; margin: 15px 0; border-radius: 8px; border-left: 3px solid #4caf50; }
-        .loading { text-align: center; color: #f7931a; font-size: 1.1em; padding: 20px; }
-        .metric-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #333; }
-        
-        @media (max-width: 768px) {
-            .dashboard { grid-template-columns: 1fr; }
-            .header h1 { font-size: 2.2em; }
-            .price-display { font-size: 2.5em; }
-        }
+        body { font-family: Arial, sans-serif; background: #0a0a0a; color: #fff; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: #f7931a; text-align: center; margin-bottom: 30px; }
+        .section { background: #1a1a1a; padding: 25px; margin: 20px 0; border-radius: 10px; border: 1px solid #333; }
+        .section h2 { color: #f7931a; margin-bottom: 15px; }
+        .price { font-size: 2.5em; color: #4caf50; margin: 15px 0; font-weight: bold; }
+        .btn { background: #f7931a; color: #000; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; font-weight: bold; }
+        .btn:hover { background: #e8820a; }
+        textarea { width: 100%; height: 80px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 5px; padding: 10px; resize: vertical; }
+        .analysis { background: #2a2a2a; padding: 20px; border-radius: 5px; margin-top: 15px; white-space: pre-wrap; line-height: 1.6; }
+        .loading { color: #f7931a; text-align: center; }
+        input { background: #2a2a2a; color: #fff; border: 1px solid #444; padding: 8px 12px; border-radius: 4px; margin: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🚀 BTC专业分析平台</h1>
-            <p>实时价格监控 | AI智能分析 | 专业投资建议</p>
+        <h1>🚀 BTC分析平台 - 核心功能版</h1>
+        
+        <!-- 1. OKX实时价格 -->
+        <div class="section">
+            <h2>📈 OKX实时BTC价格</h2>
+            <div id="btc-price" class="price">获取中...</div>
+            <div id="price-info" style="color: #ccc;">24H涨跌: <span id="change">--</span> | 来源: <span id="source">--</span></div>
+            <button class="btn" onclick="refreshPrice()">🔄 刷新价格</button>
+            <button class="btn" onclick="toggleAuto()" id="auto-btn">⏰ 开启自动刷新</button>
         </div>
 
-        <div class="status-bar">
-            <div class="status-item">
-                <span>系统状态:</span>
-                <span id="system-status" class="status-online">运行中</span>
+        <!-- 2. DeepSeek AI分析 -->
+        <div class="section">
+            <h2>🤖 DeepSeek AI分析</h2>
+            <div style="margin-bottom: 15px;">
+                <button class="btn" onclick="quickAnalysis('美联储')">美联储分析</button>
+                <button class="btn" onclick="quickAnalysis('鲍威尔')">鲍威尔讲话</button>
+                <button class="btn" onclick="quickAnalysis('加息')">加息影响</button>
+                <button class="btn" onclick="quickAnalysis('监管')">监管政策</button>
             </div>
-            <div class="status-item">
-                <span>API服务:</span>
-                <span id="api-status">检测中...</span>
-            </div>
-            <div class="status-item">
-                <span>AI分析:</span>
-                <span id="ai-status">检测中...</span>
-            </div>
+            <textarea id="user-question" placeholder="输入您的问题，比如：当前BTC走势如何？美联储政策对BTC有什么影响？"></textarea>
+            <br>
+            <button class="btn" onclick="askAI()">🚀 AI分析</button>
+            <div id="ai-result" class="analysis" style="display: none;"></div>
         </div>
 
-        <div class="dashboard">
-            <div class="card">
-                <h3>📈 实时价格监控</h3>
-                <div id="btc-price" class="price-display">加载中...</div>
-                <div id="price-change" class="price-change">--</div>
-                <div class="metric-item">
-                    <span>24H成交量:</span>
-                    <span id="volume">--</span>
-                </div>
-                <div class="metric-item">
-                    <span>数据来源:</span>
-                    <span id="price-source">--</span>
-                </div>
-                <div class="metric-item">
-                    <span>最后更新:</span>
-                    <span id="last-update">--</span>
-                </div>
-                <button class="btn" onclick="refreshPrice()">🔄 刷新价格</button>
-                <button class="btn" onclick="toggleAutoRefresh()">⏰ 自动刷新</button>
+        <!-- 3. 金十数据新闻 -->
+        <div class="section">
+            <h2>📰 金十数据新闻爬取</h2>
+            <div style="margin-bottom: 15px;">
+                <input type="text" id="news-keyword" placeholder="搜索关键词" value="比特币">
+                <button class="btn" onclick="crawlNews()">🕷️ 爬取新闻</button>
+                <button class="btn" onclick="crawlNews('美联储')">美联储新闻</button>
+                <button class="btn" onclick="crawlNews('鲍威尔')">鲍威尔新闻</button>
             </div>
-
-            <div class="card">
-                <h3>🤖 AI智能分析</h3>
-                <div style="margin-bottom: 15px;">
-                    <button class="btn" onclick="getAIAnalysis('综合市场分析')">📊 综合分析</button>
-                    <button class="btn" onclick="getAIAnalysis('美联储政策影响')">🏛️ 政策分析</button>
-                    <button class="btn" onclick="getAIAnalysis('技术指标分析')">📈 技术分析</button>
-                </div>
-                <div id="ai-analysis" class="analysis-box" style="display: none;">
-                    <div id="analysis-content">等待分析...</div>
-                    <div style="margin-top: 15px; font-size: 0.9em; color: #888;">
-                        分析时间: <span id="analysis-time">--</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>📰 市场资讯</h3>
-                <button class="btn" onclick="refreshNews()">📰 刷新新闻</button>
-                <button class="btn" onclick="searchNews('美联储')">🏛️ 美联储</button>
-                <button class="btn" onclick="searchNews('监管')">⚖️ 监管动态</button>
-                <div id="news-container">
-                    <div class="loading">加载新闻中...</div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>⚡ 系统监控</h3>
-                <div class="metric-item">
-                    <span>🎯 分析次数:</span>
-                    <span id="analysis-count">0</span>
-                </div>
-                <div class="metric-item">
-                    <span>📊 预测准确率:</span>
-                    <span id="accuracy">计算中...</span>
-                </div>
-                <div class="metric-item">
-                    <span>🔄 自动刷新:</span>
-                    <span id="auto-refresh-status">关闭</span>
-                </div>
-                <button class="btn" onclick="systemCheck()">🔍 系统检查</button>
-                <button class="btn" onclick="exportData()">📤 导出数据</button>
+            <div id="news-result">
+                <p style="color: #888;">点击上方按钮开始爬取金十数据新闻</p>
             </div>
         </div>
     </div>
 
     <script>
-        let analysisCount = 0;
-        let autoRefreshInterval = null;
+        let autoInterval = null;
 
+        // 页面加载时获取价格
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 BTC分析平台启动');
-            systemCheck();
-            loadPrice();
-            loadNews();
-            startAutoRefresh();
+            refreshPrice();
         });
 
-        function systemCheck() {
-            fetch('/api/status')
-                .then(response => response.json())
-                .then(data => {
-                    updateStatus('api-status', data.api_status || 'online', 'API正常');
-                    updateStatus('ai-status', data.ai_status || 'online', 'AI可用');
-                })
-                .catch(() => {
-                    updateStatus('api-status', 'offline', 'API异常');
-                    updateStatus('ai-status', 'offline', 'AI不可用');
-                });
-        }
-
-        function updateStatus(id, status, text) {
-            const element = document.getElementById(id);
-            element.textContent = text;
-            element.className = status === 'online' ? 'status-online' : 'status-offline';
-        }
-
-        function loadPrice() {
+        // 1. OKX价格功能
+        function refreshPrice() {
+            document.getElementById('btc-price').textContent = '获取中...';
+            
             fetch('/api/price')
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
-                        document.getElementById('btc-price').textContent = '获取失败';
-                        return;
+                        document.getElementById('btc-price').textContent = '获取失败: ' + data.error;
+                        document.getElementById('btc-price').style.color = '#f44336';
+                    } else {
+                        document.getElementById('btc-price').textContent = '$' + data.price.toLocaleString();
+                        document.getElementById('btc-price').style.color = '#4caf50';
+                        document.getElementById('change').textContent = (data.change_24h > 0 ? '+' : '') + data.change_24h.toFixed(2) + '%';
+                        document.getElementById('change').style.color = data.change_24h > 0 ? '#4caf50' : '#f44336';
+                        document.getElementById('source').textContent = data.source;
                     }
-                    
-                    document.getElementById('btc-price').textContent = '$' + data.price.toLocaleString();
-                    
-                    const changeElement = document.getElementById('price-change');
-                    const change = data.change_24h || 0;
-                    changeElement.textContent = (change > 0 ? '+' : '') + change.toFixed(2) + '%';
-                    changeElement.className = change > 0 ? 'price-change positive' : 'price-change negative';
-                    
-                    document.getElementById('volume').textContent = data.volume_24h ? 
-                        '$' + (data.volume_24h / 1000000).toFixed(2) + 'M' : '--';
-                    document.getElementById('price-source').textContent = data.source || '--';
-                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
                 })
-                .catch(() => {
-                    document.getElementById('btc-price').textContent = '连接失败';
+                .catch(error => {
+                    document.getElementById('btc-price').textContent = '网络连接失败';
+                    document.getElementById('btc-price').style.color = '#f44336';
                 });
         }
 
-        function refreshPrice() {
-            document.getElementById('btc-price').textContent = '刷新中...';
-            loadPrice();
-        }
-
-        function toggleAutoRefresh() {
-            if (autoRefreshInterval) {
-                stopAutoRefresh();
+        function toggleAuto() {
+            const btn = document.getElementById('auto-btn');
+            if (autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
+                btn.textContent = '⏰ 开启自动刷新';
             } else {
-                startAutoRefresh();
+                autoInterval = setInterval(refreshPrice, 30000);
+                btn.textContent = '⏹️ 停止自动刷新';
             }
         }
 
-        function startAutoRefresh() {
-            if (autoRefreshInterval) return;
-            autoRefreshInterval = setInterval(loadPrice, 30000);
-            document.getElementById('auto-refresh-status').textContent = '开启 (30s)';
+        // 2. AI分析功能
+        function quickAnalysis(keyword) {
+            document.getElementById('user-question').value = keyword + '对BTC价格有什么影响？请结合当前市场情况分析。';
+            askAI();
         }
 
-        function stopAutoRefresh() {
-            if (autoRefreshInterval) {
-                clearInterval(autoRefreshInterval);
-                autoRefreshInterval = null;
-                document.getElementById('auto-refresh-status').textContent = '关闭';
+        function askAI() {
+            const question = document.getElementById('user-question').value.trim();
+            if (!question) {
+                alert('请输入问题');
+                return;
             }
-        }
 
-        function getAIAnalysis(context) {
-            const analysisBox = document.getElementById('ai-analysis');
-            const content = document.getElementById('analysis-content');
-            
-            analysisBox.style.display = 'block';
-            content.textContent = 'AI正在分析中，请稍候...';
-            
-            fetch('/api/analysis', {
+            const resultDiv = document.getElementById('ai-result');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '🤖 AI正在分析中，请稍候...';
+
+            fetch('/api/ai', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ context: context })
+                body: JSON.stringify({ question: question })
             })
             .then(response => response.json())
             .then(data => {
-                content.textContent = data.analysis || '分析失败';
-                document.getElementById('analysis-time').textContent = new Date().toLocaleString();
-                analysisCount++;
-                document.getElementById('analysis-count').textContent = analysisCount;
-                updateAccuracy();
+                if (data.error) {
+                    resultDiv.textContent = '❌ ' + data.error;
+                } else {
+                    resultDiv.textContent = '🤖 AI分析结果：\n\n' + data.analysis;
+                }
             })
-            .catch(() => {
-                content.textContent = '分析失败，请检查网络连接';
+            .catch(error => {
+                resultDiv.textContent = '❌ 网络连接失败，请稍后重试';
             });
         }
 
-        function loadNews() {
-            fetch('/api/news')
-                .then(response => response.json())
-                .then(data => {
-                    const container = document.getElementById('news-container');
-                    container.innerHTML = '';
-                    
-                    if (data.news && data.news.length > 0) {
-                        data.news.forEach(item => {
-                            const newsItem = document.createElement('div');
-                            newsItem.className = 'news-item';
-                            newsItem.innerHTML = 
-                                '<div style="font-weight: bold; color: #f7931a; margin-bottom: 8px;">' + item.title + '</div>' +
-                                '<div style="font-size: 0.9em; color: #ccc; margin-bottom: 5px;">' + item.time + ' | ' + item.source + '</div>' +
-                                '<div style="line-height: 1.4;">' + item.content + '</div>';
-                            container.appendChild(newsItem);
-                        });
-                    } else {
-                        container.innerHTML = '<div class="loading">暂无新闻数据</div>';
-                    }
-                });
-        }
+        // 3. 新闻爬取功能
+        function crawlNews(keyword) {
+            const searchKeyword = keyword || document.getElementById('news-keyword').value.trim();
+            if (!searchKeyword) {
+                alert('请输入搜索关键词');
+                return;
+            }
 
-        function refreshNews() {
-            document.getElementById('news-container').innerHTML = '<div class="loading">刷新中...</div>';
-            loadNews();
-        }
+            const resultDiv = document.getElementById('news-result');
+            resultDiv.innerHTML = '<div class="loading">🕷️ 正在爬取金十数据新闻: "' + searchKeyword + '"...</div>';
 
-        function searchNews(keyword) {
-            document.getElementById('news-container').innerHTML = '<div class="loading">搜索 "' + keyword + '" 相关新闻...</div>';
-            setTimeout(loadNews, 1500);
-        }
-
-        function updateAccuracy() {
-            const accuracy = 75 + Math.random() * 15;
-            document.getElementById('accuracy').textContent = accuracy.toFixed(1) + '%';
-        }
-
-        function exportData() {
-            const data = {
-                timestamp: new Date().toISOString(),
-                analysis_count: analysisCount,
-                last_price: document.getElementById('btc-price').textContent
-            };
-            
-            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'btc-analysis-' + new Date().toISOString().split('T')[0] + '.json';
-            a.click();
-            URL.revokeObjectURL(url);
+            fetch('/api/crawl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keyword: searchKeyword })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = '<div style="color: #f44336;">❌ ' + data.error + '</div>';
+                } else if (data.news && data.news.length > 0) {
+                    let html = '<h3>📰 爬取结果 (' + data.news.length + '条):</h3>';
+                    data.news.forEach((item, index) => {
+                        html += '<div style="background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px;">';
+                        html += '<div style="color: #f7931a; font-weight: bold;">' + (index + 1) + '. ' + item.title + '</div>';
+                        html += '<div style="color: #888; font-size: 0.9em; margin: 5px 0;">' + item.time + '</div>';
+                        html += '<div style="line-height: 1.4;">' + item.content + '</div>';
+                        html += '</div>';
+                    });
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = '<div style="color: #888;">未找到相关新闻</div>';
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = '<div style="color: #f44336;">❌ 网络连接失败</div>';
+            });
         }
     </script>
 </body>
 </html>
 '''
 
-def get_btc_price():
-    """获取BTC价格"""
-    current_time = time.time()
-    
-    # 缓存检查
-    if price_cache.get('data') and (current_time - price_cache.get('time', 0)) < 30:
-        return price_cache['data']
-    
-    # OKX API
-    if OKX_API_KEY:
-        try:
-            headers = {'OK-ACCESS-KEY': OKX_API_KEY, 'Content-Type': 'application/json'}
-            response = requests.get('https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT', headers=headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('code') == '0' and data.get('data'):
-                    price_data = data['data'][0]
-                    result = {
-                        'price': float(price_data['last']),
-                        'change_24h': float(price_data['chg']),
-                        'volume_24h': float(price_data['volCcy24h']),
-                        'source': 'OKX'
-                    }
-                    price_cache = {'data': result, 'time': current_time}
-                    return result
-        except:
-            pass
-    
-    # CoinGecko API
+# 1. OKX价格API
+@app.route('/api/price')
+def api_price():
     try:
-        response = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true', timeout=5)
+        current_time = time.time()
+        
+        # 缓存检查
+        if price_cache.get('data') and (current_time - price_cache.get('time', 0)) < 30:
+            return jsonify(price_cache['data'])
+        
+        if not OKX_API_KEY:
+            return jsonify({'error': 'OKX API密钥未配置'})
+        
+        headers = {
+            'OK-ACCESS-KEY': OKX_API_KEY,
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.get('https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT', 
+                              headers=headers, timeout=10)
+        
         if response.status_code == 200:
             data = response.json()
-            bitcoin_data = data.get('bitcoin', {})
-            result = {
-                'price': bitcoin_data.get('usd', 0),
-                'change_24h': bitcoin_data.get('usd_24h_change', 0),
-                'volume_24h': bitcoin_data.get('usd_24h_vol', 0),
-                'source': 'CoinGecko'
-            }
-            price_cache = {'data': result, 'time': current_time}
-            return result
-    except:
-        pass
-    
-    # 备用数据
-    return {'price': 67000, 'change_24h': 2.5, 'volume_24h': 25000000000, 'source': 'Demo'}
+            if data.get('code') == '0' and data.get('data'):
+                price_data = data['data'][0]
+                result = {
+                    'price': float(price_data['last']),
+                    'change_24h': float(price_data['chg']),
+                    'volume_24h': float(price_data['volCcy24h']),
+                    'source': 'OKX官方API'
+                }
+                price_cache = {'data': result, 'time': current_time}
+                return jsonify(result)
+        
+        return jsonify({'error': 'OKX API返回异常'})
+        
+    except Exception as e:
+        return jsonify({'error': f'价格获取失败: {str(e)}'})
 
-def get_ai_analysis(context):
-    """AI分析"""
-    if not DEEPSEEK_API_KEY:
-        return "DeepSeek API密钥未配置，请在Railway Variables中设置DEEPSEEK_API_KEY"
-    
+# 2. DeepSeek AI分析API
+@app.route('/api/ai', methods=['POST'])
+def api_ai():
     try:
-        price_data = get_btc_price()
+        if not DEEPSEEK_API_KEY:
+            return jsonify({'error': 'DeepSeek API密钥未配置，请在Railway Variables中设置'})
+        
+        data = request.get_json()
+        question = data.get('question', '')
+        
+        if not question:
+            return jsonify({'error': '请输入问题'})
+        
+        # 获取当前价格作为分析背景
+        price_info = ""
+        try:
+            price_response = requests.get('http://localhost:5000/api/price', timeout=3)
+            if price_response.status_code == 200:
+                price_data = price_response.json()
+                if not price_data.get('error'):
+                    price_info = f"当前BTC价格: ${price_data['price']}, 24H涨跌: {price_data['change_24h']:.2f}%"
+        except:
+            pass
+        
         prompt = f"""
-作为专业的加密货币分析师，基于以下信息进行BTC市场分析：
+作为专业的加密货币分析师，请回答以下问题：
 
-当前BTC价格：${price_data.get('price', 'N/A')}
-24小时涨跌：{price_data.get('change_24h', 0):.2f}%
-数据来源：{price_data.get('source', 'Unknown')}
-分析背景：{context}
+问题：{question}
 
-请提供：
-1. 短期价格走势预测（1-3天）
-2. 关键技术指标分析
-3. 市场情绪评估
-4. 投资建议（长线/短线）
-5. 风险提示
+{price_info}
 
-请保持专业客观。
+请提供专业、客观的分析，包括：
+1. 直接回答问题
+2. 相关的市场分析
+3. 可能的价格影响
+4. 投资建议和风险提示
+
+请保持简洁明了，重点突出。
 """
         
-        headers = {'Authorization': f'Bearer {DEEPSEEK_API_KEY}', 'Content-Type': 'application/json'}
+        headers = {
+            'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
         payload = {
             "model": "deepseek-chat",
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1000,
+            "max_tokens": 1500,
             "temperature": 0.7
         }
         
-        response = requests.post('https://api.deepseek.com/chat/completions', headers=headers, json=payload, timeout=30)
+        response = requests.post('https://api.deepseek.com/chat/completions', 
+                               headers=headers, json=payload, timeout=30)
         
         if response.status_code == 200:
             result = response.json()
-            return result['choices'][0]['message']['content']
+            analysis = result['choices'][0]['message']['content']
+            return jsonify({'analysis': analysis})
         else:
-            return f"AI分析服务暂时不可用 (状态码: {response.status_code})"
+            return jsonify({'error': f'DeepSeek API错误 (状态码: {response.status_code})'})
+            
     except Exception as e:
-        return f"AI分析失败: {str(e)}"
+        return jsonify({'error': f'AI分析失败: {str(e)}'})
+
+# 3. 金十数据新闻爬取API
+@app.route('/api/crawl', methods=['POST'])
+def api_crawl():
+    """
+    金十数据新闻爬取接口
+    TODO: 这里集成您的2000元jin10.py爬虫代码
+    """
+    try:
+        data = request.get_json()
+        keyword = data.get('keyword', '')
+        
+        # 模拟新闻数据（替换为您的jin10.py爬虫）
+        mock_news = [
+            {
+                'title': f'【金十数据】{keyword}最新动态：市场关注度持续上升',
+                'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'content': f'根据最新消息，{keyword}相关政策动向引起市场高度关注。分析师认为，这一消息可能对加密货币市场产生重大影响，投资者需要密切关注后续发展。'
+            },
+            {
+                'title': f'【重要】{keyword}政策解读及市场影响分析',
+                'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'content': f'专业分析师对{keyword}最新政策进行深度解读，预计短期内可能对BTC价格产生15-20%的波动影响。建议投资者谨慎操作，注意风险控制。'
+            },
+            {
+                'title': f'{keyword}相关新闻汇总：三大要点值得关注',
+                'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'content': f'今日{keyword}相关新闻汇总：1) 政策层面的最新表态；2) 市场反应和资金流向；3) 专业机构的投资建议。综合分析显示，当前需要关注...'
+            }
+        ]
+        
+        # TODO: 在这里调用您的jin10.py爬虫
+        # 示例：
+        # from jin10 import crawl_news  # 导入您的爬虫函数
+        # real_news = crawl_news(keyword)  # 调用爬虫
+        # return jsonify({'news': real_news})
+        
+        return jsonify({
+            'news': mock_news,
+            'keyword': keyword,
+            'count': len(mock_news),
+            'note': '这是模拟数据，请替换为您的jin10.py爬虫代码'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'新闻爬取失败: {str(e)}'})
 
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/api/price')
-def api_price():
-    return jsonify(get_btc_price())
-
-@app.route('/api/analysis', methods=['POST'])
-def api_analysis():
-    try:
-        data = request.get_json() or {}
-        context = data.get('context', '当前市场分析')
-        analysis = get_ai_analysis(context)
-        return jsonify({
-            'analysis': analysis,
-            'timestamp': datetime.now().isoformat(),
-            'context': context
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/news')
-def api_news():
-    # 模拟新闻数据（预留金十数据爬虫接口）
-    mock_news = [
-        {
-            'title': '美联储政策最新动态',
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
-            'content': '美联储官员就当前货币政策发表重要讲话，市场关注度较高...',
-            'source': '金十数据',
-            'importance': 'high'
-        },
-        {
-            'title': 'BTC技术分析报告',
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
-            'content': '当前BTC价格走势分析，关键支撑位和阻力位分析...',
-            'source': '市场分析',
-            'importance': 'medium'
-        },
-        {
-            'title': '机构投资动向',
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
-            'content': '大型机构最新的BTC持仓变化情况，资金流向分析...',
-            'source': '投资快讯',
-            'importance': 'high'
-        }
-    ]
-    return jsonify({'news': mock_news})
-
-@app.route('/api/status')
-def api_status():
-    return jsonify({
-        'api_status': 'online',
-        'ai_status': 'online' if DEEPSEEK_API_KEY else 'offline',
-        'timestamp': datetime.now().isoformat()
-    })
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    print(f"🚀 BTC分析平台启动，端口: {port}")
+    print(f"📊 OKX API: {'已配置' if OKX_API_KEY else '未配置'}")
+    print(f"🤖 DeepSeek API: {'已配置' if DEEPSEEK_API_KEY else '未配置'}")
     app.run(host='0.0.0.0', port=port, debug=True)
